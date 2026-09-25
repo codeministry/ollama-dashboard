@@ -103,7 +103,7 @@ class OllamaService:
                             relative_time = self.format_relative_time(expires_dt)
                             tz_abbr = time.strftime('%Z')
                             model['expires_at'] = {
-                                'local': local_dt.strftime(f'%-I:%M %p, %b %-d ({tz_abbr})'),
+                                'local': local_dt.strftime(f'%-I:%M:%S %p, %b %-d ({tz_abbr})'),
                                 'relative': relative_time
                             }
                         except Exception as e:
