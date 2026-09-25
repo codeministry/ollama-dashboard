@@ -168,7 +168,7 @@ class OllamaService:
                 dt = value
             local_dt = dt.astimezone()
             tz_abbr = time.strftime('%Z')
-            return local_dt.strftime(f'%-I:%M %p, %b %-d ({tz_abbr})')
+            return local_dt.strftime(f'%-I:%M:%S %p, %b %-d ({tz_abbr})')
         except Exception as e:
             return str(value)
 
