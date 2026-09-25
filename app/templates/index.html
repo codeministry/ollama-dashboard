@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="30">
     <title>Ollama Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -308,6 +307,43 @@
         .text-muted {
             color: #8b949e !important;
         }
+
+        .title-container {
+            position: relative;
+        }
+
+        .refresh-picker {
+            position: absolute;
+            top: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #8b949e;
+        }
+
+        .refresh-picker select {
+            background-color: #22262c;
+            color: #e1e1e1;
+            border: 1px solid #2d3339;
+            border-radius: 8px;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .refresh-picker select:focus {
+            outline: none;
+            border-color: #4caf50;
+        }
+
+        @media (max-width: 767.98px) {
+            .refresh-picker {
+                position: static;
+                justify-content: center;
+                margin-top: 0.75rem;
+            }
+        }
     </style>
 </head>
 <body>
@@ -319,6 +355,18 @@
                 </div>
                 Ollama Dashboard
             </h1>
+            <label class="refresh-picker" for="refreshInterval">
+                <span>Refresh</span>
+                <select id="refreshInterval">
+                    <option value="5">5s</option>
+                    <option value="10">10s</option>
+                    <option value="15">15s</option>
+                    <option value="20">20s</option>
+                    <option value="30">30s</option>
+                    <option value="45">45s</option>
+                    <option value="60">60s</option>
+                </select>
+            </label>
         </div>
         
         <div class="refresh-indicator mb-4 {% if error %}error{% endif %}">
@@ -327,6 +375,28 @@
         </div>
 
         <script>
+            const REFRESH_KEY = 'ollamaDashboardRefreshSeconds';
+            const REFRESH_DEFAULT = 30;
+            const refreshSelect = document.getElementById('refreshInterval');
+            const nextRefresh = document.getElementById('nextRefresh');
+
+            // localStorage, weil das Reload ein echter Seitenwechsel ist und die Auswahl
+            // ihn sonst nicht überlebt. Ein unbekannter Wert fällt auf den Default zurück,
+            // statt einen Countdown auf NaN zu starten.
+            function storedInterval() {
+                let raw = null;
+                try {
+                    raw = localStorage.getItem(REFRESH_KEY);
+                } catch (e) {
+                    raw = null;
+                }
+                const allowed = Array.from(refreshSelect.options).map((o) => o.value);
+                return allowed.includes(raw) ? Number(raw) : REFRESH_DEFAULT;
+            }
+
+            let refreshSeconds = storedInterval();
+            refreshSelect.value = String(refreshSeconds);
+
             function updateTimes() {
                 const now = new Date();
                 const timeStr = now.toLocaleTimeString(undefined, {
@@ -336,15 +406,38 @@
                 });
                 const tzAbbr = '{{ timezone }}';
                 document.getElementById('lastUpdate').textContent = `${timeStr} ${tzAbbr}`;
-                
-                let seconds = 30;
-                const countdown = setInterval(() => {
+            }
+
+            let countdown;
+            let reloadTimer;
+
+            function startRefreshCycle() {
+                clearInterval(countdown);
+                clearTimeout(reloadTimer);
+
+                let seconds = refreshSeconds;
+                nextRefresh.textContent = seconds;
+                countdown = setInterval(() => {
                     seconds--;
-                    document.getElementById('nextRefresh').textContent = seconds;
+                    nextRefresh.textContent = Math.max(seconds, 0);
                     if (seconds <= 0) clearInterval(countdown);
                 }, 1000);
+                reloadTimer = setTimeout(() => window.location.reload(), refreshSeconds * 1000);
             }
+
+            refreshSelect.addEventListener('change', () => {
+                refreshSeconds = Number(refreshSelect.value);
+                try {
+                    localStorage.setItem(REFRESH_KEY, String(refreshSeconds));
+                } catch (e) {
+                    // Private Mode oder blockierte Site-Daten: die Auswahl gilt dann nur
+                    // bis zum nächsten Reload, der Countdown läuft trotzdem richtig.
+                }
+                startRefreshCycle();
+            });
+
             updateTimes();
+            startRefreshCycle();
         </script>
 
         {% if error %}
