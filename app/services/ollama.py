@@ -5,6 +5,28 @@ import time
 import json
 import os
 from collections import deque
+import re
+
+
+# Ollama stamps expires_at with the host's OWN utc offset (2026-09-26T01:36:44.61426+02:00)
+# and a variable number of fractional digits. Python 3.9's fromisoformat rejects a trailing
+# Z and accepts only 3 or 6 of those digits, which is why this code used to cut at the dot —
+# but that cut takes the offset with it, and re-appending +00:00 reads a local timestamp as
+# UTC. On a CEST host that put every expiry two hours into the future and turned a five
+# minute keep-alive into "about 2 hours". So: drop the fraction, keep the offset.
+_FRACTIONAL_SECONDS = re.compile(r'\.\d+')
+
+
+def parse_timestamp(value):
+    if not isinstance(value, str):
+        return value
+    text = _FRACTIONAL_SECONDS.sub('', value.strip())
+    if text.endswith('Z'):
+        text = text[:-1] + '+00:00'
+    parsed = datetime.fromisoformat(text)
+    # A stamp without an offset is the one case where assuming UTC is right: that is what
+    # Ollama sends when its host runs on UTC.
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 class OllamaService:
     def __init__(self, app=None):
@@ -95,10 +117,7 @@ class OllamaService:
                         }
                     else:
                         try:
-                            # Handle microseconds by truncating them
-                            expires_at = model['expires_at'].replace('Z', '+00:00')
-                            expires_at = expires_at.split('.')[0] + '+00:00'
-                            expires_dt = datetime.fromisoformat(expires_at)
+                            expires_dt = parse_timestamp(model['expires_at'])
                             local_dt = expires_dt.astimezone()
                             relative_time = self.format_relative_time(expires_dt)
                             tz_abbr = time.strftime('%Z')
@@ -161,11 +180,7 @@ class OllamaService:
 
     def format_datetime(self, value):
         try:
-            if isinstance(value, str):
-                # Handle timezone offset in the ISO format string
-                dt = datetime.fromisoformat(value.replace('Z', '+00:00').split('.')[0])
-            else:
-                dt = value
+            dt = parse_timestamp(value)
             local_dt = dt.astimezone()
             tz_abbr = time.strftime('%Z')
             return local_dt.strftime(f'%-I:%M:%S %p, %b %-d ({tz_abbr})')
@@ -174,11 +189,7 @@ class OllamaService:
 
     def format_time_ago(self, value):
         try:
-            if isinstance(value, str):
-                # Handle timezone offset in the ISO format string
-                dt = datetime.fromisoformat(value.replace('Z', '+00:00').split('.')[0])
-            else:
-                dt = value
+            dt = parse_timestamp(value)
             
             now = datetime.now(dt.tzinfo)
             diff = now - dt
