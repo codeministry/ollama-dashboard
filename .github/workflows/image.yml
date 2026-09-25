@@ -1,0 +1,86 @@
+# The only pipeline this fork has.
+#
+# Upstream publishes no image at all: there is a docker/Dockerfile and a compose file that
+# tells you to run scripts/build.sh on your own machine. This fork exists to turn that into
+# an artifact a cluster can pull, so the workflow is deliberately one job — build, push,
+# done. No tests (upstream's tests/ is excluded from the image context anyway), no release
+# ceremony, no changelog.
+name: Image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# An explicit block zeroes every scope it does not list, so `contents: read` has to be
+# written down even though it looks like the default.
+permissions:
+  contents: read
+  packages: write
+
+# Never cancel: two runs would race for the floating `main` tag, and the loser could be the
+# one that writes it last.
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # arm64 is emulated here and it is slow. It is not optional: the only cluster that
+      # pulls this image runs on arm64, and an amd64-only image fails at pull time with an
+      # exec format error rather than at build time. amd64 is deliberately NOT built —
+      # nothing pulls it, and it would double an emulated build for nobody.
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/ollama-dashboard
+          # `sha-<short>` is what a deploy pins and a rollback names; `main` is the
+          # floating one, for a chart that would rather set imagePullPolicy: Always than
+          # edit a value on every build. The same pair the other codeministry images use.
+          tags: |
+            type=sha
+            type=raw,value=main
+
+      - uses: docker/build-push-action@v7
+        with:
+          # Context is the repo root and not docker/, because the Dockerfile copies
+          # requirements.txt and the app tree. docker/docker-compose.yml says the same
+          # thing with `context: ..`.
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=ollama-dashboard
+          cache-to: type=gha,mode=max,scope=ollama-dashboard
+
+      # The tag has to be pinned by hand in the Helm chart, so print it where you will
+      # actually look for it rather than making someone read the package page.
+      - name: Report the tag to pin
+        run: |
+          {
+            echo "### Image"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo
+            echo "Pin the \`sha-\` tag in \`devops/projects/ai/ollama-dashboard/values.yaml\` → \`web.image.tag\`."
+          } >> "$GITHUB_STEP_SUMMARY"

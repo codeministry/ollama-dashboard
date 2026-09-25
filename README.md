@@ -1,5 +1,17 @@
 # Ollama Dashboard
 
+> **This is a codeministry fork of [`poiley/ollama-dashboard`](https://github.com/poiley/ollama-dashboard).**
+>
+> Upstream publishes no container image, so this fork adds one thing: a GitHub Actions
+> workflow that builds `docker/Dockerfile` for `linux/arm64` and pushes it to
+> `ghcr.io/codeministry/ollama-dashboard`. The application code is unchanged apart from two
+> Dockerfile lines (a `HEALTHCHECK` that called a `curl` the base image does not have, and
+> `PYTHONDONTWRITEBYTECODE` for a read-only root filesystem).
+>
+> The Helm chart that deploys it lives in the `devops` repo under
+> `projects/ai/ollama-dashboard/`. It reaches Ollama through the in-cluster
+> `ollama-proxy-nginx` service, not through `OLLAMA_HOST=localhost`.
+
 A lightweight, personal dashboard for monitoring your locally running Ollama models. Built with Flask and designed for simplicity.
 
 ![Screenshot of Ollama Process Status UI](app/static/screenshot.png)
